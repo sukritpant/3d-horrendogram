@@ -107,9 +107,8 @@ The script will prompt for file paths and generate 'output.html' containing your
 
 ## License
 
-This work is licensed under a Creative Commons Attribution-NonCommercial 4.0 International License. 
-You may not use this material for commercial purposes. Please provide attribution as specified.
-[Link to official license](https://creativecommons.org/licenses/by-nc/4.0/)
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+[Link to official license](https://creativecommons.org/licenses/by/4.0/)
 
 ---
 
@@ -119,3 +118,4 @@ This tool was created as part of the collaborative multidisciplinary project SOS
 
 ## Link to project
 Visit our project website for further details̀: [Link to Project](https://research.abo.fi/en/projects/3d-visualization-of-governance-and-regulatory-layers/)
+Visit Zenodo for the project model: [Link to Project Model] (https://doi.org/10.5281/zenodo.17541211)
