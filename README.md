@@ -115,8 +115,7 @@ You may not use this material for commercial purposes. Please provide attributio
 
 ## Citing
 
-If you use this tool for research or teaching, please cite the repository.  
-'Please let me know what should the citation be like'
+This tool was created as part of the collaborative multidisciplinary project SOS3D at Åbo Akademi University (Turku, Finland) in 2025. In accordance with the license any distribution, remixing, adaptation, and development should acknowledge project researcher Sukrit Pant as the creator.
 
 ## Link to project
 Visit our project website for further details̀: [Link to Project](https://research.abo.fi/en/projects/3d-visualization-of-governance-and-regulatory-layers/)
