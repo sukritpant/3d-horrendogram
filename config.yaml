@@ -1,0 +1,4 @@
+display_xyz_in_tooltip: false
+actor_legislation_z_offset: true
+actor_z_offset: 0.33
+rotation_speed: 250
