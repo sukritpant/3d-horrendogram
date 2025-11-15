@@ -116,6 +116,8 @@ This work is licensed under a Creative Commons Attribution 4.0 International Lic
 
 This tool was created as part of the collaborative multidisciplinary project SOS3D at Åbo Akademi University (Turku, Finland) in 2025. In accordance with the license any distribution, remixing, adaptation, and development should acknowledge project researcher Sukrit Pant as the creator.
 
+You can also cite our Zenodo article from the link below: Engström, V., Pant, S., Grönberg, C., & Teixeira, J. (2025). 3D Multilayer Governance Visualization. Zenodo.[https://doi.org/10.5281/zenodo.17541211](https://doi.org/10.5281/zenodo.17541211)
+
 ## Link to project
 Visit our project website for further details̀: [Link to Project](https://research.abo.fi/en/projects/3d-visualization-of-governance-and-regulatory-layers/)
 
