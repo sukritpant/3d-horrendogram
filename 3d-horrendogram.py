@@ -9,14 +9,14 @@ import yaml
 from collections import defaultdict
 import math
 
-
+# Load configuration
 def read_config(path="config.yaml"):
     with open(path, "r") as f:
         cfg = yaml.safe_load(f)
     cfg.setdefault("display_xyz_in_tooltip", False)
     cfg.setdefault("actor_legislation_z_offset", True)
     cfg.setdefault("actor_z_offset", 0.2)
-    cfg.setdefault("rotation_speed", 150)  # ms per frame
+    cfg.setdefault("rotation_speed", 150)  # mention in ms per frame
     return cfg
 
 
@@ -39,7 +39,7 @@ def generate_layer_colors(layers):
     ]
     return {layer: palette[i % len(palette)] for i, layer in enumerate(layers)}
 
-
+# File loading
 def load_input_files():
     first_path = input("Enter path to your main dataset file (CSV or Excel): ").strip()
     if not os.path.isfile(first_path):
@@ -64,7 +64,7 @@ def load_input_files():
     else:
         raise ValueError("Unsupported file type.")
 
-
+# Preparing data for network definition
 def prepare_network(edges_df, layer_df=None):
     edges_df.columns = [c.strip().lower() for c in edges_df.columns]
     required_cols = {'source', 'source_layer', 'source_actor/legislation'}
@@ -172,7 +172,7 @@ def prepare_network(edges_df, layer_df=None):
 
     return {"layers": layers_dict, "edges": edges, "node_types": node_types}
 
-
+# Calculate 3D positions for nodes to avoid overlap
 def calculate_node_positions(network_data, cfg, radius=3.0):
     pos = {}
     actor_offset = cfg.get("actor_z_offset", 0.2)
@@ -189,11 +189,10 @@ def calculate_node_positions(network_data, cfg, radius=3.0):
             if use_z_offset:
                 if ntype == 'actor':
                     z = base_z + actor_offset
-                # Optionally keep legislation at base_z or add other offsets here if needed
             pos[node] = {'x': x, 'y': y, 'z': z, 'color': linfo['color']}
     return pos
 
-
+# Blending colors for inter-layer edges
 def blend_colors(c1, c2):
     def h2r(h): return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
 
@@ -219,7 +218,7 @@ def interpolate_color(c1, c2, t):
     return r2h(blended)
 
 
-
+# Create 3D visualization
 def create_3d_visualization(network_data, pos, cfg):
     fig = go.Figure()
     shape_map = {'actor': 'circle', 'legislation': 'square', 'unknown': 'diamond'}
