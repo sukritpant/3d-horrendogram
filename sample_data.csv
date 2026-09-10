@@ -1,0 +1,6 @@
+source,source_layer,source_actor/legislation,target,target_layer,target_actor/legislation
+Actor A,Layer 1,actor,Legislation X,Layer 2,legislation
+Legislation X,Layer 2,legislation,Actor B,Layer 3,actor
+Actor B,Layer 3,actor,Actor A,Layer 1,actor
+Actor C,Layer 1,actor,Legislation Y,Layer 2,legislation
+Legislation Y,Layer 2,legislation,Actor A,Layer 1,actor

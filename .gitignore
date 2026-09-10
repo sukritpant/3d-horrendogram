@@ -1,0 +1,32 @@
+sample_date.csv
+realtime-horrendogram/
+venv/
+.venv/
+.env
+README2.md
+Obsidian Files/
+interactive-app/
+
+# Personal working notes / chat transcripts (not project docs)
+DEPLOYMENT.md
+Deploy_Check.md
+Add layer reordering and filter sidebar to frontend.md
+
+# Older/duplicate app copies superseded by root main.py/core.py/parser.py/static/
+web-app/
+deploy/
+
+# Legacy standalone Streamlit app, superseded by the FastAPI web app
+app.py
+
+# Personal research data / generated output (not generic sample data)
+Obsidian Files.zip
+SoS3D_July15.zip
+output.html
+parsed_data.csv
+
+# OS / IDE / Python cruft
+.DS_Store
+__pycache__/
+*.pyc
+.idea/

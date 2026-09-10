@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Horrendogram Visualizer</title>
+    <!-- ?v= busts browser/CDN caches on deploy: bump it whenever
+         style.css or script.js changes, otherwise clients keep the old
+         copy for the CDN's max-age (currently 7 days). -->
+    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="logo">
+            <i class="fas fa-network-wired" style="color: #818cf8; font-size: 1.5rem;"></i>
+            <h1>Horrendogram 3D</h1>
+        </div>
+
+        <!-- Sidebar Page Tabs -->
+        <div class="sidebar-tabs">
+            <button class="sidebar-tab active" data-page="setup">
+                <i class="fas fa-sliders"></i> Setup
+            </button>
+            <button class="sidebar-tab" data-page="filters">
+                <i class="fas fa-filter"></i> Filters
+            </button>
+        </div>
+
+        <!-- ─── Setup Page ─────────────────────────────────────────────── -->
+        <div id="setup-page" class="sidebar-page active">
+            <!-- Data Source Toggle -->
+            <div class="section-title">Data Source</div>
+            <div class="source-toggle">
+                <button class="source-btn active" data-source="csv">
+                    <i class="fas fa-table"></i> CSV / Excel
+                </button>
+                <button class="source-btn" data-source="obsidian">
+                    <i class="fas fa-book"></i> Obsidian ZIP
+                </button>
+            </div>
+
+            <!-- CSV / Excel inputs -->
+            <div id="csv-inputs">
+                <div class="control-group">
+                    <label for="dataset">Main Dataset (CSV or Excel)</label>
+                    <input type="file" id="dataset" accept=".csv, .xlsx, .xls">
+                </div>
+                <div class="control-group">
+                    <label for="layers">Layer Order File (optional)</label>
+                    <input type="file" id="layers" accept=".csv, .xlsx, .xls">
+                </div>
+            </div>
+
+            <!-- Obsidian ZIP input -->
+            <div id="obsidian-inputs" style="display: none;">
+                <div class="control-group">
+                    <label for="obsidian-zip">Obsidian Vault ZIP</label>
+                    <input type="file" id="obsidian-zip" accept=".zip">
+                </div>
+                <p class="hint">ZIP should contain folders named <em>Actors</em>, <em>Instruments</em>, and <em>Interlinkages</em>.</p>
+            </div>
+
+            <!-- Visual Settings -->
+            <div class="section-title">Visual Settings</div>
+            <div class="control-group">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="enableOffset" checked>
+                    Enable Actor Z-Offset
+                </label>
+            </div>
+            <div class="control-group">
+                <label for="offsetValue">Actor Z-Offset</label>
+                <input type="number" id="offsetValue" value="0.33" step="0.01" min="0" max="1">
+            </div>
+            <div class="control-group">
+                <label for="rotationSpeed">Rotation Speed (ms)</label>
+                <input type="number" id="rotationSpeed" value="250" step="10">
+            </div>
+            <div class="control-group">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="showXYZ">
+                    Show X,Y,Z in Tooltip
+                </label>
+            </div>
+
+            <div style="margin-top: auto; padding-top: 1.5rem;">
+                <button id="processBtn" class="btn btn-primary">
+                    <i class="fas fa-play"></i> Generate Visualization
+                </button>
+            </div>
+        </div>
+
+        <!-- ─── Filters Page ───────────────────────────────────────────── -->
+        <div id="filters-page" class="sidebar-page">
+            <p id="filters-empty" class="hint">Generate a visualization on the <em>Setup</em> tab to unlock layer ordering and filters.</p>
+
+            <div id="filters-content" style="display: none;">
+                <!-- Layer Order -->
+                <div class="section-title">Layer Order</div>
+                <p class="hint">Drag to reorder governance layers (top of list = top layer).</p>
+                <ul id="layer-order-list" class="layer-order-list"></ul>
+                <button id="applyOrderBtn" class="btn btn-secondary">
+                    <i class="fas fa-check"></i> Apply Order
+                </button>
+
+                <!-- Legend / visibility filters (moved off the plot canvas) -->
+                <div class="section-title" style="margin-top: 1.5rem;">Legend</div>
+                <p class="hint">Toggle visibility of layers, node types, and edges.</p>
+                <div id="legend-filters"></div>
+
+                <!-- Tag Filter -->
+                <div id="tag-filter-section" style="display: none;">
+                    <div class="section-title" style="margin-top: 1.5rem;">Tag Filter</div>
+                    <p class="hint">Click tags to highlight matching nodes and edges.</p>
+                    <div id="tag-chips" class="tag-chips"></div>
+                    <button id="clearTagsBtn" class="btn btn-secondary" style="display: none; margin-top: 0.75rem;">
+                        <i class="fas fa-times"></i> Clear filters
+                    </button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div class="viz-container">
+            <div id="plot"></div>
+            <div id="loader" class="loader">
+                <div class="spinner"></div>
+                <p>Processing network data…</p>
+            </div>
+            <div id="emptyState" class="empty-state">
+                <i class="fas fa-upload"></i>
+                <p>Upload your dataset to start visualization</p>
+            </div>
+            <div id="info-box">
+                <b>Network Details</b><br>
+                Hover over a node or edge to explore descriptions.
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js?v=2"></script>
+</body>
+
+</html>

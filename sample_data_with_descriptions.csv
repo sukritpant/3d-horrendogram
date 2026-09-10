@@ -1,0 +1,7 @@
+source,source_layer,source_actor/legislation,target,target_layer,target_actor/legislation,description,node_description
+Actor A,Layer 1,actor,Legislation X,Layer 2,legislation,Actor A is influenced by Legislation X,Actor A: A primary stakeholder in regional development.
+Legislation X,Layer 2,legislation,Actor B,Layer 3,actor,Legislation X regulates Actor B,Legislation X: The overarching environmental framework.
+Actor B,Layer 3,actor,Actor A,Layer 1,actor,Actor B collaborates with Actor A across layers,Actor B: A local regulatory body.
+Actor C,Layer 1,actor,Legislation Y,Layer 2,legislation,Actor C complies with Legislation Y,Actor C: An independent non-profit organization.
+Legislation Y,Layer 2,legislation,Actor A,Layer 1,actor,Legislation Y impacts Actor A inversely,Legislation Y: A specific industry-targeted regulation.
+Actor A,Layer 1,actor,Actor C,Layer 1,actor,Internal collaboration within Layer 1,
