@@ -4,32 +4,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Horrendogram Visualizer</title>
+    <title>3D Horrendogram</title>
+    <!-- Set the theme before first paint so a dark-mode reload doesn't flash white. -->
+    <script>
+        (function () {
+            var saved = null;
+            try { saved = localStorage.getItem('horrendogram-theme'); } catch (e) { /* private mode */ }
+            var dark = saved ? saved === 'dark'
+                : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
     <!-- ?v= busts browser/CDN caches on deploy: bump it whenever
          style.css or script.js changes, otherwise clients keep the old
          copy for the CDN's max-age (currently 7 days). -->
-    <link rel="stylesheet" href="style.css?v=2">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=10">
     <script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
 <body>
     <aside class="sidebar">
         <div class="logo">
-            <i class="fas fa-network-wired" style="color: #818cf8; font-size: 1.5rem;"></i>
-            <h1>Horrendogram 3D</h1>
+            <h1>3D Horrendogram</h1>
+            <button id="themeToggle" class="theme-toggle" type="button"
+                    aria-label="Switch between light and dark theme" title="Switch theme">
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+                </svg>
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4"/>
+                    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+                </svg>
+            </button>
         </div>
 
         <!-- Sidebar Page Tabs -->
         <div class="sidebar-tabs">
             <button class="sidebar-tab active" data-page="setup">
-                <i class="fas fa-sliders"></i> Setup
+                Setup
             </button>
             <button class="sidebar-tab" data-page="filters">
-                <i class="fas fa-filter"></i> Filters
+                Filters
             </button>
         </div>
 
@@ -39,10 +56,10 @@
             <div class="section-title">Data Source</div>
             <div class="source-toggle">
                 <button class="source-btn active" data-source="csv">
-                    <i class="fas fa-table"></i> CSV / Excel
+                    CSV / Excel
                 </button>
                 <button class="source-btn" data-source="obsidian">
-                    <i class="fas fa-book"></i> Obsidian ZIP
+                    Obsidian ZIP
                 </button>
             </div>
 
@@ -92,7 +109,7 @@
 
             <div style="margin-top: auto; padding-top: 1.5rem;">
                 <button id="processBtn" class="btn btn-primary">
-                    <i class="fas fa-play"></i> Generate Visualization
+                    Generate Visualization
                 </button>
             </div>
         </div>
@@ -102,26 +119,46 @@
             <p id="filters-empty" class="hint">Generate a visualization on the <em>Setup</em> tab to unlock layer ordering and filters.</p>
 
             <div id="filters-content" style="display: none;">
-                <!-- Layer Order -->
-                <div class="section-title">Layer Order</div>
-                <p class="hint">Drag to reorder governance layers (top of list = top layer).</p>
-                <ul id="layer-order-list" class="layer-order-list"></ul>
-                <button id="applyOrderBtn" class="btn btn-secondary">
-                    <i class="fas fa-check"></i> Apply Order
-                </button>
+                <!-- Layer Order (hidden in an exported file: reordering needs
+                     the server to recompute node positions) -->
+                <div id="layer-order-section">
+                    <div class="section-title">Layer Order</div>
+                    <p class="hint">Drag to reorder governance layers (top of list = top layer).</p>
+                    <ul id="layer-order-list" class="layer-order-list"></ul>
+                    <button id="applyOrderBtn" class="btn btn-secondary">
+                        Apply Order
+                    </button>
+                </div>
 
-                <!-- Legend / visibility filters (moved off the plot canvas) -->
-                <div class="section-title" style="margin-top: 1.5rem;">Legend</div>
-                <p class="hint">Toggle visibility of layers, node types, and edges.</p>
-                <div id="legend-filters"></div>
-
-                <!-- Tag Filter -->
+                <!-- Tag Filter sits directly under the reorder panel: the
+                     Show / Hide list grows with the layer count and would
+                     otherwise push it below the fold. -->
                 <div id="tag-filter-section" style="display: none;">
-                    <div class="section-title" style="margin-top: 1.5rem;">Tag Filter</div>
-                    <p class="hint">Click tags to highlight matching nodes and edges.</p>
+                    <div class="section-title section-title-lead">Tag Filter</div>
+                    <p class="hint">Click a tag to highlight what carries it. Pick several to widen the match.</p>
                     <div id="tag-chips" class="tag-chips"></div>
                     <button id="clearTagsBtn" class="btn btn-secondary" style="display: none; margin-top: 0.75rem;">
-                        <i class="fas fa-times"></i> Clear filters
+                        Clear filters
+                    </button>
+                </div>
+
+                <!-- Visibility filters (moved off the plot canvas). One row per
+                     layer covers its ring and all of its nodes; edges follow
+                     their endpoints automatically. -->
+                <div class="section-title section-title-lead">Show / Hide</div>
+                <p class="hint">Uncheck a layer to hide it and everything connected to it.</p>
+                <div id="legend-filters"></div>
+
+                <!-- Export -->
+                <div id="export-section">
+                    <div class="section-title" style="margin-top: 1.5rem;">Export</div>
+                    <p class="hint">Saves a single HTML file with the legend and tag filters still working. Layer order is fixed to the current arrangement.</p>
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="bundlePlotly">
+                        Work offline (bundles Plotly, ~4.8&nbsp;MB)
+                    </label>
+                    <button id="exportBtn" class="btn btn-secondary" style="margin-top: 0.75rem;">
+                        Export Interactive HTML
                     </button>
                 </div>
             </div>
@@ -136,17 +173,16 @@
                 <p>Processing network data…</p>
             </div>
             <div id="emptyState" class="empty-state">
-                <i class="fas fa-upload"></i>
                 <p>Upload your dataset to start visualization</p>
             </div>
             <div id="info-box">
                 <b>Network Details</b><br>
-                Hover over a node or edge to explore descriptions.
+                Hover a node or edge to preview it. Click to keep it open.
             </div>
         </div>
     </main>
 
-    <script src="script.js?v=2"></script>
+    <script src="script.js?v=10"></script>
 </body>
 
 </html>

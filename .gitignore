@@ -30,3 +30,14 @@ parsed_data.csv
 __pycache__/
 *.pyc
 .idea/
+
+Development-Breakdown.md
+Git-Branching-Steps.md
+Non-Tech.md
+starter-vault/
+layer_order.csv
+layer_order.xlsx
+sample_data.csv
+sample_data_with_descriptions.csv
+sample_data_with_descriptions.xlsx
+.claude

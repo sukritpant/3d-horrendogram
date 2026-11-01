@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 import pandas as pd
 import io
 import json
+import os
 from typing import Optional
 
 from core import prepare_network, calculate_node_positions
@@ -73,7 +74,10 @@ async def process_obsidian(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# Absolute path: Passenger's working directory is not the app folder, so a
+# relative "static" cannot be resolved on the DirectAdmin server.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app.mount("/", StaticFiles(directory=os.path.join(BASE_DIR, "static"), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn

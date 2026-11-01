@@ -1,158 +1,104 @@
-# 3D Multilayer Network Visualization
+# 3D Horrendogram — Web App
 
-A Python tool to visualize multilayer networks in 3D focused on 3D visualization of Horrendograms using Plotly. Explore complex relationships as multiplex networks with color-coding, node shapes and labels — either from the command line, or through a browser-based web app.
+A browser-based tool for exploring governance networks in 3D. Upload a spreadsheet
+or an Obsidian vault and see actors, instruments and the links between them as a
+stack of layers you can rotate, filter and export.
 
-The project now ships two ways to run the visualizer:
-
-| Mode | Entry point | Best for |
-|------|-------------|----------|
-| CLI | `3d-horrendogram.py` | Local, offline use |
-| Web app | `main.py` + `static/` | Sharing with non-technical collaborators |
+Looking for the command-line version? See [README-CLI.md](README-CLI.md) or the
+[`text-based-cli`](https://github.com/sukritpant/3d-horrendogram/tree/text-based-cli) branch.
 
 ---
 
 ## Features
 
-- To visualize multilayer network with layer order and colors
-- Display actor/legislation with different shapes and configure Z-offset for settings
-- Create a rotation animation for viewing
-- HTML export for sharing outputs
-- Data loading through CSV files or Excel (multiple sheets), or by uploading an Obsidian vault ZIP (web app)
-- Interactive layer reordering, legend/tag filtering, sidebar UI (web app)
+- Interactive 3D view with one ring per governance layer
+- Input from CSV, Excel or a zipped Obsidian vault
+- Layer reordering without re-uploading
+- Show/hide controls for layers and edges
+- Tag filter that highlights matching nodes and edges
+- Details panel with descriptions and clickable links
+- Light and dark themes
+- Export to a single interactive HTML file
 
 ---
 
-## Installation
+## Getting started
 
-1. **Clone the repository**  
-git clone https://github.com/sukritpant/3d-horrendogram
+### Use it online
+
+Don't want to install anything? Use the hosted app at
+<https://sukritpant.com/3dhorrendogram/>. Your files are uploaded to that server to
+be processed, so install it locally if your data is sensitive.
+
+### Install it locally
+
+```bash
+git clone -b web-frontend https://github.com/sukritpant/3d-horrendogram
 cd 3d-horrendogram
-
-2. **Install required libraries**  
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-
----
-
-## CLI Usage
-
-1. **Prepare your data files**
-
-- **Main dataset**: Excel ('.xlsx') or CSV file containing your network edges. The Excel file should have an 'edges' sheet, and optionally a 'layers' sheet.  
-  Required columns in 'edges':
-    - source (name of actor/legislation)
-    - source_layer (layer it belongs in)
-    - source_actor/legislation (mention if actor/legislation)
-    - target (name of actor/legislation)
-    - target_layer (layer it belongs in)
-    - target_actor/legislation (mention if actor/legislation)
-
-  **Note**: Target is not necessary if a node needs to exist without target. At the moment the code only looks for actor/legislation or blank (unknown).
-- **Layer order file** (optional): CSV or Excel sheet listing layers and their order.
-    Required columns in 'layers' sheet if using multi-sheet Excel:
-        - layer (same layer name as mention in source_layer and/or target_layer)
-        - order (in number starting from 1)
-
-
-2. **Edit configuration**
-
-Open and modify 'config.yaml' as needed:
-
-display_xyz_in_tooltip: false
-actor_legislation_z_offset: false
-actor_z_offset: 0.33
-rotation_speed: 250 (Set time in millisecond per frame)
-
-
-3. **Run the script**
-python3 3d-horrendogram.py
-
-
-The script will prompt for file paths and generate 'output.html' containing your interactive visualization. If you have not provided layer order, it will prompt for layer order as well.
-
----
-
-## Output
-
-- Interactive Plotly 3D graph with:
-- Colored rings for layers
-- Type/role-based node markers ("actor" as circles, "legislation" as squares, "unknown" as diamonds)
-- Animated camera rotation via play/pause buttons
-- Exported as a standalone HTML file
-
----
-
-## Web Application
-
-The web app is a browser-based frontend for the same visualization engine, meant for sharing with collaborators who don't want to run Python scripts directly.
-
-**Install dependencies** (same `requirements.txt` as the CLI)
-
-```bash
-pip install -r requirements.txt
-```
-
-**Start the server**
-
-```bash
 uvicorn main:app --reload
 ```
 
-Open `http://localhost:8000` in a browser.
+Open <http://localhost:8000>. On Windows, activate with `venv\Scripts\activate`.
 
-### Architecture
+To try it straight away, upload `sample_data_with_descriptions.csv` on the **Setup**
+tab and click **Generate Visualization**.
 
-```
-3d-horrendogram/
-├── core.py                  # Shared network logic (imported by all entry points)
-├── parser.py                # Obsidian vault parser (directory or ZIP)
-├── main.py                  # FastAPI backend
-├── 3d-horrendogram.py       # CLI tool
-├── config.yaml              # CLI configuration
-├── requirements.txt         # Dependencies for CLI and web app
-└── static/
-    ├── index.html
-    ├── script.js
-    └── style.css
-```
+---
 
-`main.py` exposes two endpoints, both returning `{ network_data, positions, config }`:
+## Preparing your data
 
-| Endpoint | Input | Description |
-|----------|-------|-------------|
-| `POST /process` | CSV or Excel file + optional layer order file | Standard edge/layer data |
-| `POST /process-obsidian` | ZIP of an Obsidian vault | Parses actors, instruments, interlinkages |
+### Option 1: CSV or Excel
 
-### Data Inputs
+Use a comma-separated, UTF-8 CSV file, or an Excel file with a sheet named exactly
+`edges`.
 
-**Option 1 — CSV or Excel**: same format as the CLI tool, see [CLI Usage](#cli-usage) above.
+| Column | Required | Meaning |
+|---|---|---|
+| `source` | Yes | Node name |
+| `source_layer` | Yes | Layer it belongs to |
+| `source_type` | Yes | `actor`, `instrument` or `legislation` |
+| `target` | No | Connected node. Leave blank for a node with no connection |
+| `target_layer` | No | Layer of the target |
+| `target_type` | No | Type of the target |
+| `description` | No | Describes the connection |
+| `node_description` | No | Describes the source node |
+| `target_node_description` | No | Describes the target node |
+| `source_tags`, `target_tags`, `edge_tags` | No | Comma-separated tags |
 
-**Option 2 — Obsidian Vault ZIP**: zip your Obsidian vault (or just the relevant folders) and upload it. The ZIP must contain three folders, matched by case-insensitive name:
+The column names `source_actor/legislation` and `target_actor/legislation` are also
+accepted in place of `source_type` and `target_type`.
 
-| Folder name contains | Content |
-|----------------------|---------|
-| `Actors` | One `.md` file per actor node |
-| `Instruments` | One `.md` file per instrument/legislation node |
-| `Interlinkages` | One `.md` file per edge between nodes |
+To set the layer order, add a `layers` sheet or upload a separate file with the
+columns `layer` and `order`, where `1` is the top layer. See `layer_order.csv` for
+an example. You can also reorder layers in the app.
 
-Actor / Instrument frontmatter format:
+### Option 2: Obsidian vault
 
-```yaml
+Upload a ZIP of a vault containing three folders, recognised by these words in their
+names: `Actors`, `Instruments` and `Interlinkages`. A working example is in
+[`starter-vault/`](starter-vault).
+
+The file name of an actor or instrument note is the node's name:
+
+```markdown
 ---
 type: actor          # or: instrument, legislation
 level: national      # becomes the layer name
 tags:
   - governance
-  - nutrients
 ---
 
 ## Description
 
-Free-text description of this node.
+Text describing this node.
 ```
 
-Interlinkage frontmatter format:
+An interlinkage note connects two nodes, and its links must match their file names:
 
-```yaml
+```markdown
 ---
 from: "[[Source Node Name]]"
 to: "[[Target Node Name]]"
@@ -162,83 +108,92 @@ tags:
 
 ## Description
 
-Free-text description of this relationship.
+Text describing this relationship.
 ```
 
-### Sidebar: Setup vs. Filters
+Notes with no interlinkages appear as standalone nodes on their layer.
 
-The sidebar is split into two tabs, purely a view toggle with no reprocessing on switch:
+---
 
-| Tab | Contents |
-|-----|----------|
-| **Setup** | Data source picker, dataset/ZIP upload, visual settings, **Generate Visualization** button |
-| **Filters** | Layer order, legend (trace visibility), tag filter — populated once a visualization has been generated |
+## Using the app
 
-- **Layer Order**: reorder governance layers with the ▲/▼ buttons (or drag via the grip handle), then click **Apply Order** to re-render with the new order. This reuses `core.py`'s `manual_order` support in `prepare_network(edges_df, layer_df, manual_order)`.
-- **Legend**: checklist of Layers / Node Types / Edges to toggle trace visibility, replacing the on-plot Plotly legend so it doesn't compete for space with the 3D view.
-- **Tag Filter**: click tags to highlight matching nodes/edges (OR logic across multiple tags); non-matching items dim rather than disappear.
+The sidebar has two tabs.
 
-### Visual Settings
+**Setup**: choose your data source and files, adjust the visual settings, and
+generate the visualization.
 
 | Setting | Default | Description |
-|---------|---------|-------------|
-| Enable Actor Z-Offset | on | Elevates actor nodes slightly above the layer plane |
-| Actor Z-Offset | 0.33 | Vertical separation amount |
-| Rotation Speed | 250 ms | Camera rotation animation speed |
-| Show X,Y,Z in Tooltip | off | Displays raw coordinates in the hover panel |
+|---|---|---|
+| Enable Actor Z-Offset | On | Lifts actors slightly above the layer plane |
+| Actor Z-Offset | 0.33 | Size of that separation |
+| Rotation Speed | 250 ms | Speed of the camera animation |
+| Show X,Y,Z in Tooltip | Off | Adds coordinates to the details panel |
+
+**Filters**: available once a visualization exists.
+
+- **Layer Order:** move layers with ▲/▼ or by dragging, then click **Apply Order**
+- **Tag Filter:** click tags to highlight matches; everything else dims
+- **Show / Hide:** toggle layers and edges
+- **Export:** save an interactive HTML file, with an option to work offline
+
+Hover over a node or edge to preview its details, click to pin them, and
+double-click to release. Circles are actors, squares are instruments or legislation,
+and diamonds are unknown types.
 
 ---
 
-## File Structure
+## Project structure
 
-| File                      | Purpose                                         |
-|---------------------------|-------------------------------------------------|
-| 3d-horrendogram.py        | CLI visualization script                        |
-| core.py                   | Shared network logic used by CLI and web app    |
-| parser.py                 | Obsidian vault parser                           |
-| main.py                   | FastAPI backend for the web app                 |
-| static/                   | Web app frontend (HTML/CSS/JS)                  |
-| config.yaml               | Configuration file for display/animation options|
-| requirements.txt          | Python dependencies                             |
-| README.md                 | Documentation and usage examples                |
-| *your_data_files.xlsx*    | Your network edge/layer data                    |
+```
+3d-horrendogram/
+├── main.py              # FastAPI backend
+├── core.py              # Network logic
+├── parser.py            # Obsidian vault parser
+├── static/              # Frontend (HTML, CSS, JS)
+├── starter-vault/       # Example Obsidian vault with templates
+├── 3d-horrendogram.py   # Command-line tool (see README-CLI.md)
+├── config.yaml          # Command-line tool settings
+└── requirements.txt
+```
 
----
+| Endpoint | Input |
+|---|---|
+| `POST /process` | CSV or Excel file, plus an optional layer order file |
+| `POST /process-obsidian` | ZIP of an Obsidian vault |
 
-## Customization
-
-- Modify colors or marker shapes in the Python script as needed ('generate_layer_colors', 'shape_map').
-- Set custom Z offsets via 'actor_z_offset' in the config file.
-- Tune rotary speed with 'rotation_speed'.
+Both return `{ network_data, positions, config }`.
 
 ---
 
 ## Troubleshooting
 
-- **Edges not visible**: Ensure all required columns are present and properly named.
-- **Node offsets not appearing**: Set 'actor_legislation_z_offset: true' in 'config.yaml'.
-- **Dependencies missing**: Run 'pip install -r requirements.txt'.
+- **A layer called `unknown`:** a note has no `level`, or a link doesn't match a file name.
+- **Excel upload fails:** the data sheet must be named exactly `edges`.
+- **CSV upload fails:** save it as comma-separated UTF-8. Some regional Excel settings
+  use semicolons instead.
+- **Changes don't appear:** hard-refresh the browser (⌘⇧R or Ctrl+Shift+R).
 
 ---
-## Future features to work on
-
-- **Python library**: Develop this program into a Python library.
-- **Integration with other libraries**: Integrate the tool to read from other popular network libaries such as networkx, pymnet.
 
 ## License
 
-This work is licensed under a Creative Commons Attribution 4.0 International License.
-[Link to official license](https://creativecommons.org/licenses/by/4.0/)
+This work is licensed under a
+[Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/).
 
 ---
 
 ## Citing
 
-This tool was created as part of the collaborative multidisciplinary project SOS3D at Åbo Akademi University (Turku, Finland) in 2025. In accordance with the license any distribution, remixing, adaptation, and development should acknowledge project researcher Sukrit Pant as the creator.
+This tool was created as part of the collaborative multidisciplinary project SOS3D
+at Åbo Akademi University (Turku, Finland) in 2025. In accordance with the license,
+any distribution, remixing, adaptation and development should acknowledge project
+researcher Sukrit Pant as the creator.
 
-You can also cite our Zenodo article from the link below: Engström, V., Pant, S., Grönberg, C., & Teixeira, J. (2025). 3D Multilayer Governance Visualization. Zenodo.[https://doi.org/10.5281/zenodo.17541211](https://doi.org/10.5281/zenodo.17541211)
+You can also cite our Zenodo article: Engström, V., Pant, S., Grönberg, C., &
+Teixeira, J. (2025). 3D Multilayer Governance Visualization. Zenodo.
+[https://doi.org/10.5281/zenodo.17541211](https://doi.org/10.5281/zenodo.17541211)
 
-## Link to project
-Visit our project website for further details̀: [Link to Project](https://research.abo.fi/en/projects/3d-visualization-of-governance-and-regulatory-layers/)
+## Project links
 
-Visit Zenodo for the project model: [Link to Project Model](https://doi.org/10.5281/zenodo.17541211)
+- [Project website](https://research.abo.fi/en/projects/3d-visualization-of-governance-and-regulatory-layers/)
+- [Project model on Zenodo](https://doi.org/10.5281/zenodo.17541211)

@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import unicodedata
 import yaml
 import zipfile
 import io
@@ -65,11 +66,34 @@ def parse_markdown_file(filepath):
         return {}, ""
 
 
+def _nfc(name):
+    """
+    Normalize a note name to Unicode NFC.
+
+    macOS stores filenames decomposed (NFD: 'A' + combining ring), while note
+    *content* -- and so every [[link]] -- is normally composed (NFC: 'Å').
+    The two render identically but compare unequal, so a node like
+    'Act on the Autonomy of Åland' silently failed to match its interlinkages
+    and fell back to layer/type 'unknown'.
+    """
+    return unicodedata.normalize('NFC', name) if isinstance(name, str) else name
+
+
 def clean_link(value):
-    """Strip Obsidian [[ ]] link syntax."""
-    if isinstance(value, str):
-        return value.replace('[[', '').replace(']]', '').strip('"').strip("'")
-    return value
+    """
+    Strip Obsidian [[ ]] link syntax, returning the bare note name.
+
+    An unquoted `from: [[Name]]` is valid YAML for a nested list, [['Name']],
+    so unwrap single-item lists rather than failing the whole upload on an
+    unhashable value. '[[Name|alias]]' and '[[Name#Heading]]' resolve to 'Name'.
+    """
+    while isinstance(value, list) and len(value) == 1:
+        value = value[0]
+    if not isinstance(value, str):
+        return None
+    name = value.replace('[[', '').replace(']]', '').strip().strip('"').strip("'")
+    name = name.split('|', 1)[0].split('#', 1)[0].strip()
+    return _nfc(name) or None
 
 
 def _clean_tag_list(value):
@@ -112,7 +136,7 @@ def _build_edges_df(actor_paths, instrument_paths, interlinkage_paths, read_fn):
     nodes = {}
 
     for path in actor_paths:
-        name = os.path.splitext(os.path.basename(path))[0]
+        name = _nfc(os.path.splitext(os.path.basename(path))[0])
         fm, desc = parse_markdown_content(read_fn(path))
         nodes[name] = {
             "type": fm.get("type", "actor"),
@@ -122,7 +146,7 @@ def _build_edges_df(actor_paths, instrument_paths, interlinkage_paths, read_fn):
         }
 
     for path in instrument_paths:
-        name = os.path.splitext(os.path.basename(path))[0]
+        name = _nfc(os.path.splitext(os.path.basename(path))[0])
         fm, desc = parse_markdown_content(read_fn(path))
         nodes[name] = {
             "type": fm.get("type", "instrument"),
@@ -133,6 +157,15 @@ def _build_edges_df(actor_paths, instrument_paths, interlinkage_paths, read_fn):
 
     rows = []
     node_descriptions_used = set()
+
+    def node_description(name, node):
+        # Emit each node's description once, on the first row that mentions it
+        # as either endpoint. Checking only sources left nodes that are never a
+        # 'from' (e.g. instruments only ever linked *to*) with no description.
+        if name in node_descriptions_used or not node["description"]:
+            return ""
+        node_descriptions_used.add(name)
+        return f"{name}: {node['description']}"
 
     for path in interlinkage_paths:
         fm, edge_desc = parse_markdown_content(read_fn(path))
@@ -146,11 +179,6 @@ def _build_edges_df(actor_paths, instrument_paths, interlinkage_paths, read_fn):
         src = nodes.get(source_name, {"type": "unknown", "layer": "unknown", "tags": [], "description": ""})
         tgt = nodes.get(target_name, {"type": "unknown", "layer": "unknown", "tags": [], "description": ""})
 
-        node_desc = ""
-        if source_name not in node_descriptions_used and src["description"]:
-            node_desc = f"{source_name}: {src['description']}"
-            node_descriptions_used.add(source_name)
-
         rows.append({
             "source": source_name,
             "source_layer": src["layer"],
@@ -162,7 +190,30 @@ def _build_edges_df(actor_paths, instrument_paths, interlinkage_paths, read_fn):
             "target_tags": _tags_to_str(tgt.get("tags", [])),
             "edge_tags": _tags_to_str(fm.get("tags", [])),
             "description": edge_desc,
-            "node_description": node_desc
+            "node_description": node_description(source_name, src),
+            "target_node_description": node_description(target_name, tgt)
+        })
+
+    # Notes with no interlinkage would otherwise never reach the graph, which
+    # is built from rows. Emit a target-less row for each so it is drawn as a
+    # standalone node on its layer.
+    linked = {r["source"] for r in rows} | {r["target"] for r in rows}
+    for name, node in nodes.items():
+        if name in linked:
+            continue
+        rows.append({
+            "source": name,
+            "source_layer": node["layer"],
+            "source_type": node["type"],
+            "source_tags": _tags_to_str(node.get("tags", [])),
+            "target": None,
+            "target_layer": None,
+            "target_type": None,
+            "target_tags": "",
+            "edge_tags": "",
+            "description": "",
+            "node_description": node_description(name, node),
+            "target_node_description": ""
         })
 
     return pd.DataFrame(rows)

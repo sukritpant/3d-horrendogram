@@ -7,8 +7,89 @@ document.addEventListener('DOMContentLoaded', () => {
     let legendGroups = [];           // [{legendgroup, label, color, indices, category}]
     let edgeMeta = [];               // [{index, legendgroup, sourceGroup, targetGroup}] — one per edge trace
     let nodeTraceMeta = [];          // [{index, tagsPerNode, baseColor}] — one per node trace
-    let nodeGroupVisible = {};       // legendgroup ("layer_type") -> boolean, from Node Types checkboxes
+    let nodeGroupVisible = {};       // legendgroup ("nodes_<layer>") -> boolean, from the Layers checkboxes
     let edgeGroupVisible = {};       // legendgroup ("intra_x" / "inter_x_y") -> boolean, from Edges checkboxes
+    let lastRender = null;           // last {network_data, positions, config} — the export payload
+    let pinned = false;              // details panel holding a clicked node/edge
+
+    const PLOTLY_CDN = 'https://cdn.plot.ly/plotly-3.4.0.min.js';
+
+    // ─── Theme ───────────────────────────────────────────────────────────────
+    // Dark is a selected set of steps, not an inversion: a colour tuned for a
+    // white surface sits outside the lightness band a dark surface needs. The
+    // backend always sends the light step; this maps it to its dark twin.
+    const LAYER_DARK = {
+        '#2a78d6': '#3987e5', '#eb6834': '#d95926', '#1baf7a': '#199e70',
+        '#eda100': '#c98500', '#e87ba4': '#d55181', '#008300': '#008300',
+        '#4a3aa7': '#9085e9', '#e34948': '#e66767', '#7f7f7f': '#9a9a9a',
+        '#525252': '#767676'
+    };
+
+    const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
+
+    /** Layer colour for the active theme. Unknown colours pass through. */
+    const paint = hex => (isDark() && LAYER_DARK[hex]) || hex;
+
+    /** Plot chrome that has to track the theme (Plotly can't read CSS vars). */
+    function themeTokens() {
+        const css = getComputedStyle(document.documentElement);
+        const v = name => css.getPropertyValue(name).trim();
+        return {
+            text: v('--text-main') || (isDark() ? '#f4f4f2' : '#18181b'),
+            muted: v('--text-muted') || (isDark() ? '#a1a19a' : '#6b7280'),
+            grid: v('--plot-grid') || (isDark() ? '#35352f' : '#e4e4e7'),
+            surface: v('--bg-color') || (isDark() ? '#1a1a19' : '#ffffff'),
+            markerRing: isDark() ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'
+        };
+    }
+
+    // ─── Theme Toggle ────────────────────────────────────────────────────────
+    // The initial theme is stamped on <html> by an inline script in index.html,
+    // before first paint, so a dark-mode reload doesn't flash white.
+    document.getElementById('themeToggle').addEventListener('click', () => {
+        const next = isDark() ? 'light' : 'dark';
+        if (next === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        else document.documentElement.removeAttribute('data-theme');
+        try { localStorage.setItem('horrendogram-theme', next); } catch (e) { /* private mode */ }
+
+        // Plotly holds resolved colours per trace, so a theme change means a
+        // re-render. Carry the viewer's state across it rather than resetting
+        // the camera and every filter they had set.
+        if (!lastRender) return;
+        const state = captureViewState();
+        renderVisualization(lastRender, { camera: state.camera });
+        restoreViewState(state);
+    });
+
+    /** Camera plus whatever the viewer has filtered, so a re-render is invisible. */
+    function captureViewState() {
+        const gd = document.getElementById('plot');
+        let camera = null;
+        try { camera = gd && gd._fullLayout && gd._fullLayout.scene
+            ? JSON.parse(JSON.stringify(gd._fullLayout.scene.camera)) : null; } catch (e) { /* not yet drawn */ }
+        return {
+            camera,
+            tags: [...selectedTags],
+            hidden: [...Object.entries({ ...nodeGroupVisible, ...edgeGroupVisible })
+                .filter(([, on]) => !on).map(([group]) => group)]
+        };
+    }
+
+    /** Replays the captured state as real UI events, so one code path applies it. */
+    function restoreViewState(state) {
+        state.hidden.forEach(group => {
+            const box = document.querySelector(`#legend-filters input[data-legendgroup="${group}"]`);
+            if (box && box.checked) {
+                box.checked = false;
+                box.dispatchEvent(new Event('change'));
+            }
+        });
+        state.tags.forEach(tag => {
+            const chip = [...document.querySelectorAll('#tag-chips .tag-chip')]
+                .find(c => c.textContent === tag);
+            if (chip && !chip.classList.contains('active')) chip.click();
+        });
+    }
 
     // ─── Sidebar Page Tabs (Setup / Filters) ─────────────────────────────────
     document.querySelectorAll('.sidebar-tab').forEach(btn => {
@@ -47,14 +128,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const zipFile = document.getElementById('obsidian-zip').files[0];
             if (!zipFile) { alert('Please select an Obsidian vault ZIP file.'); return; }
             formData.append('file', zipFile);
-            endpoint = '/process-obsidian';
+            // Relative (no leading slash) so the app works both locally at /
+            // and when deployed under a subdirectory, e.g. /3dhorrendogram/
+            endpoint = 'process-obsidian';
         } else {
             const datasetFile = document.getElementById('dataset').files[0];
             if (!datasetFile) { alert('Please select a dataset file.'); return; }
             formData.append('file', datasetFile);
             const layerFile = document.getElementById('layers').files[0];
             if (layerFile) formData.append('layer_file', layerFile);
-            endpoint = '/process';
+            endpoint = 'process';
         }
 
         const config = {
@@ -90,14 +173,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ─── Visualization Renderer ───────────────────────────────────────────────
-    function renderVisualization(data) {
+    function renderVisualization(data, opts = {}) {
         const { network_data, positions, config } = data;
+        lastRender = data;
+        const tokens = themeTokens();
         const traces = [];
         traceTagSets = [];
         edgeMeta = [];
         nodeTraceMeta = [];
         const legendMeta = []; // parallel to `traces` — {legendgroup, label, color, category}
-        const nodeGroupOf = (node, layer) => `${layer}_${network_data.node_types[node] || 'unknown'}`;
+        // One visibility group per layer — actors and instruments toggle together.
+        const nodeGroupOf = (node, layer) => `nodes_${layer}`;
 
         // 1. Layer rings (structural — not filtered)
         Object.entries(network_data.layers).forEach(([lname, linfo]) => {
@@ -107,14 +193,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 x: theta.map(t => 4 * Math.cos(t)),
                 y: theta.map(t => 4 * Math.sin(t)),
                 z: new Array(61).fill(linfo.z),
-                line: { color: linfo.color, width: 2 },
+                line: { color: paint(linfo.color), width: 2 },
                 name: `Layer: ${lname}`,
-                legendgroup: `layer_${lname}`,
+                legendgroup: `nodes_${lname}`,
                 showlegend: false,
                 hoverinfo: 'skip'
             });
             traceTagSets.push(null); // rings are never tag-filtered
-            legendMeta.push({ legendgroup: `layer_${lname}`, label: `Layer: ${lname}`, color: linfo.color, category: 'Layers' });
+            // Pushed first, so this entry supplies the group's label and colour;
+            // the layer's node traces below just add their indices to it.
+            legendMeta.push({ legendgroup: `nodes_${lname}`, label: lname, color: paint(linfo.color), category: 'Layers' });
         });
 
         // 2. Intra-layer edges (same layer on both ends) — one trace per edge,
@@ -129,14 +217,14 @@ document.addEventListener('DOMContentLoaded', () => {
             traces.push({
                 type: 'scatter3d', mode: 'lines',
                 x: [sp.x, tp.x], y: [sp.y, tp.y], z: [sp.z, tp.z],
-                line: { color: network_data.layers[layer].color, width: 2 },
+                line: { color: paint(network_data.layers[layer].color), width: 2 },
                 name: `Intra-layer (${layer})`,
                 legendgroup,
                 showlegend: false,
                 hoverinfo: 'skip'
             });
             traceTagSets.push(e.tags || []);
-            legendMeta.push({ legendgroup, label: `Intra-layer (${layer})`, color: network_data.layers[layer].color, category: 'Edges' });
+            legendMeta.push({ legendgroup, label: `Intra-layer (${layer})`, color: paint(network_data.layers[layer].color), category: 'Edges' });
             edgeMeta.push({
                 index: traces.length - 1,
                 legendgroup,
@@ -153,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
         interEdges.forEach(e => {
             const sp = positions[e.source], tp = positions[e.target];
             if (!sp || !tp) return;
-            const color = interpolateColor(sp.color, tp.color, 0.5);
+            const color = interpolateColor(paint(sp.color), paint(tp.color), 0.5);
             const legendKey = [e.source_layer, e.target_layer].sort().join('_');
             let hoverText = `<b>${e.source_orig || e.source} (${e.source_layer}) ↔ ${e.target_orig || e.target} (${e.target_layer})</b>`;
             if (e.tags && e.tags.length) hoverText += `<br>Tags: ${e.tags.join(', ')}`;
@@ -222,22 +310,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     x: nodes.map(n => positions[n].x),
                     y: nodes.map(n => positions[n].y),
                     z: nodes.map(n => positions[n].z),
-                    marker: { size: 8, color: linfo.color, line: { color: 'white', width: 1 }, symbol: shapeMap[type] },
+                    marker: { size: 8, color: paint(linfo.color), line: { color: tokens.markerRing, width: 1 }, symbol: shapeMap[type] },
                     text: nodes.map(n => n.split('__')[0]),
                     textposition: 'top center',
-                    // Labels must stay legible regardless of the (often dark) layer color
-                    // behind them, so force a bright, high-contrast font instead of the
-                    // Plotly default (which reads as dark-on-dark against this theme).
-                    textfont: { color: '#f8fafc', size: 11, family: 'Inter, -apple-system, sans-serif' },
+                    // Labels wear the theme's ink rather than a series colour, so they
+                    // stay legible against whatever layer colour sits behind them.
+                    textfont: { color: tokens.text, size: 11, family: 'inherit' },
                     name: `${lname} - ${type}`,
-                    legendgroup: `${lname}_${type}`,
+                    legendgroup: `nodes_${lname}`,
                     hovertext: hovers,
                     hoverinfo: 'none',
                     hoverlabel: { bgcolor: 'rgba(0,0,0,0)', bordercolor: 'rgba(0,0,0,0)', font: { color: 'rgba(0,0,0,0)' } },
                     showlegend: false
                 });
                 traceTagSets.push([...traceTags]);
-                legendMeta.push({ legendgroup: `${lname}_${type}`, label: `${lname} — ${type}`, color: linfo.color, category: 'Node Types' });
+                legendMeta.push({ legendgroup: `nodes_${lname}`, label: lname, color: paint(linfo.color), category: 'Layers' });
                 // Per-node tags (not just the trace-wide union) so the tag filter
                 // can dim individual nodes. Without this, a whole layer+type group
                 // lights up when any single member matches, which made untagged
@@ -245,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nodeTraceMeta.push({
                     index: traces.length - 1,
                     tagsPerNode,
-                    baseColor: linfo.color,
+                    baseColor: paint(linfo.color),
                     names: nodes.map(n => n.split('__')[0])
                 });
             });
@@ -258,42 +345,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 xaxis: { visible: false },
                 yaxis: { visible: false },
                 zaxis: {
-                    title: { text: 'Governance Layers', font: { color: '#94a3b8' } },
+                    title: { text: 'Governance Layers', font: { color: tokens.muted } },
                     tickvals: Object.values(network_data.layers).map(l => l.z),
                     ticktext: Object.keys(network_data.layers),
-                    tickfont: { color: '#94a3b8' },
-                    gridcolor: '#334155'
+                    tickfont: { color: tokens.muted },
+                    gridcolor: tokens.grid
                 },
                 aspectmode: 'manual',
                 aspectratio: { x: 1, y: 1, z: 1 },
-                camera: { eye: { x: 2, y: 2, z: 1 } }
+                // Keep the viewer's camera across a theme switch, which re-renders.
+                camera: opts.camera || { eye: { x: 2, y: 2, z: 1 } }
             },
             margin: { l: 0, r: 0, b: 0, t: 30 },
             // The legend now lives in the sidebar's Filters tab (see populateLegendFilters)
             // so the plot canvas stays uncluttered — keep it off at the layout level too,
             // since per-trace showlegend alone wouldn't stop Plotly from reserving space for it.
             showlegend: false,
-            template: 'plotly_dark'
+            font: { color: tokens.text, family: 'inherit' }
         };
 
         Plotly.newPlot('plot', traces, layout, { responsive: true });
 
-        // Info box on hover
+        // Details panel: hover previews, click pins, double-click dismisses.
+        // Pinning is what makes links reachable -- while unpinned, moving the
+        // pointer toward a link is itself the unhover that would clear it.
         const infoBox = document.getElementById('info-box');
         infoBox.style.display = 'block';
         const plotEl = document.getElementById('plot');
+
         plotEl.on('plotly_hover', ({ points }) => {
-            const point = points[0];
-            let content = point.hovertext || point.text || '';
-            if (!content && point.data) {
-                const idx = point.pointNumber || 0;
-                const src = point.data.hovertext || point.data.text;
-                content = Array.isArray(src) ? src[idx] : (src || '');
-            }
-            if (content) infoBox.innerHTML = content;
+            if (pinned) return;   // a pinned item outranks whatever is under the cursor
+            const content = pointDetails(points);
+            if (content) infoBox.innerHTML = renderDetails(content);
         });
+
         plotEl.on('plotly_unhover', () => {
-            infoBox.innerHTML = '<b>Network Details</b><br>Hover over a node or edge to explore descriptions.';
+            if (!pinned) showPlaceholder();
+        });
+
+        plotEl.on('plotly_click', ({ points }) => {
+            const content = pointDetails(points);
+            if (!content) return;
+            pinned = true;
+            infoBox.classList.add('pinned');
+            infoBox.innerHTML = renderDetails(content) + PIN_HINT;
         });
 
         // Tag filter
@@ -333,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const swatch = document.createElement('span');
             swatch.className = 'layer-swatch';
-            swatch.style.background = (layersInfo[lname] && layersInfo[lname].color) || '#94a3b8';
+            swatch.style.background = paint((layersInfo[lname] && layersInfo[lname].color) || '') || 'var(--text-muted)';
 
             const name = document.createElement('span');
             name.className = 'layer-name';
@@ -433,12 +528,12 @@ document.addEventListener('DOMContentLoaded', () => {
         nodeGroupVisible = {};
         edgeGroupVisible = {};
         legendGroups.forEach(g => {
-            if (g.category === 'Node Types') nodeGroupVisible[g.legendgroup] = true;
+            if (g.category === 'Layers') nodeGroupVisible[g.legendgroup] = true;
             if (g.category === 'Edges') edgeGroupVisible[g.legendgroup] = true;
         });
 
         // Bucket into category sections in a fixed, readable order
-        const categories = ['Layers', 'Node Types', 'Edges'];
+        const categories = ['Layers', 'Edges'];
         categories.forEach(category => {
             const entries = legendGroups.filter(g => g.category === category);
             if (!entries.length) return;
@@ -457,10 +552,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.checked = true;
+                checkbox.dataset.legendgroup = entry.legendgroup;
 
                 const swatch = document.createElement('span');
                 swatch.className = 'legend-swatch';
-                swatch.style.background = entry.color || '#94a3b8';
+                swatch.style.background = entry.color || 'var(--text-muted)';
 
                 const label = document.createElement('span');
                 label.textContent = entry.label;
@@ -470,10 +566,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 checkbox.addEventListener('change', () => {
                     row.classList.toggle('dimmed', !checkbox.checked);
-                    if (category === 'Node Types') {
-                        // Toggling a node type must also hide any interlinkage
-                        // that touches it — an edge only shows when BOTH its
-                        // endpoints' node types are active.
+                    if (category === 'Layers') {
+                        // A layer row covers its ring and every node in it, and
+                        // must also hide any interlinkage that touches the layer —
+                        // an edge only shows when BOTH its endpoints are active.
                         nodeGroupVisible[entry.legendgroup] = checkbox.checked;
                         Plotly.restyle('plot', { visible: checkbox.checked }, entry.indices);
                         updateEdgeVisibility();
@@ -492,9 +588,9 @@ document.addEventListener('DOMContentLoaded', () => {
         updateEdgeVisibility();
     }
 
-    // An interlinkage is only shown when its own Edges toggle AND both of its
-    // endpoints' Node Types toggles are active — hiding a node type should
-    // hide every edge dangling from it, not leave it floating.
+    // An interlinkage is only shown when its own Edges toggle AND both of the
+    // layers it connects are active — hiding a layer should hide every edge
+    // dangling from it, not leave it floating with one end invisible.
     function updateEdgeVisibility() {
         if (!edgeMeta.length) return;
         const indices = edgeMeta.map(m => m.index);
@@ -549,7 +645,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const DIM = 0.07;
-    const BG_COLOR = '#0f172a';   // matches --bg-color; dimmed nodes blend toward it
+    // Dimmed nodes blend toward the current surface, so the effect reads the
+    // same in both themes (blending toward navy on a white page would look
+    // like a colour change rather than a fade).
+    const dimTarget = () => themeTokens().surface;
 
     function applyTagFilter() {
         if (!traceTagSets.length) return;
@@ -597,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const colors = [], texts = [];
             m.tagsPerNode.forEach((tags, i) => {
                 const on = nodeMatches(tags);
-                colors.push(on ? m.baseColor : interpolateColor(m.baseColor, BG_COLOR, 0.82));
+                colors.push(on ? m.baseColor : interpolateColor(m.baseColor, dimTarget(), 0.82));
                 texts.push(on ? m.names[i] : '');
             });
             Plotly.restyle('plot', {
@@ -607,11 +706,204 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ─── Export ──────────────────────────────────────────────────────────────
+    const exportBtn = document.getElementById('exportBtn');
+    exportBtn.addEventListener('click', () => exportInteractiveHtml());
+
+    async function exportInteractiveHtml() {
+        if (!lastRender) {
+            alert('Generate a visualization before exporting.');
+            return;
+        }
+        const bundlePlotly = document.getElementById('bundlePlotly').checked;
+        const originalLabel = exportBtn.innerHTML;
+        exportBtn.disabled = true;
+        exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Building…';
+
+        try {
+            // Rebuild from the app's own index.html rather than a duplicated
+            // template, so exported markup can never drift from the real thing.
+            const [shell, css, js] = await Promise.all([
+                fetch('index.html').then(r => r.text()),
+                fetch('style.css').then(r => r.text()),
+                fetch('script.js').then(r => r.text())
+            ]);
+
+            let plotlyTag = `<script src="${PLOTLY_CDN}"><\/script>`;
+            if (bundlePlotly) {
+                const lib = await fetch(PLOTLY_CDN).then(r => r.text());
+                plotlyTag = `<script>${lib}<\/script>`;
+            }
+
+            // Escaping '<' keeps a description containing a closing script
+            // tag from ending the tag the data is embedded in.
+            const payload = JSON.stringify(lastRender).replace(/</g, '\\u003c');
+
+            // Each replacement uses a function, never a replacement string: in
+            // a string, "$&" expands to the matched text. Plotly's bundle
+            // contains the literal "\\$&" (d3's requote), which would otherwise
+            // swallow the <script src=...> tag being replaced -- injecting a
+            // stray closing tag and corrupting the library. A function's return
+            // value is inserted verbatim.
+            //
+            // Each is also asserted: a pattern that silently fails to match
+            // yields a file missing its stylesheet or its script, which opens
+            // as a blank page. Better to fail here with a usable message.
+            const substitutions = [
+                [/<link rel="stylesheet" href="style\.css[^"]*">/, () => `<style>\n${css}\n</style>`, 'stylesheet link'],
+                [/<script src="https:\/\/cdn\.plot\.ly[^"]*"><\/script>/, () => plotlyTag, 'Plotly script tag'],
+                [/<script src="script\.js[^"]*"><\/script>/,
+                    () => `<script>window.__HORRENDOGRAM_DATA__ = ${payload};<\/script>\n<script>\n${js}\n<\/script>`,
+                    'app script tag']
+            ];
+
+            let html = shell;
+            for (const [pattern, replacer, label] of substitutions) {
+                if (!pattern.test(html)) {
+                    throw new Error(`could not find the ${label} in index.html — the page may be a cached older version; hard-refresh and retry`);
+                }
+                html = html.replace(pattern, replacer);
+            }
+
+            const stamp = new Date().toISOString().slice(0, 10);
+            downloadFile(html, `horrendogram-${stamp}.html`, 'text/html');
+        } catch (err) {
+            alert(`Export failed: ${err.message}`);
+        } finally {
+            exportBtn.disabled = false;
+            exportBtn.innerHTML = originalLabel;
+        }
+    }
+
+    function downloadFile(content, filename, type) {
+        const url = URL.createObjectURL(new Blob([content], { type }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        // Tearing this down synchronously can cut the browser off while it is
+        // still reading the blob -- saving an empty file, or navigating the tab
+        // to a now-dead blob URL (a blank page) when the browser ignores the
+        // download attribute. Likeliest with the ~4.8 MB offline bundle.
+        setTimeout(() => {
+            a.remove();
+            URL.revokeObjectURL(url);
+        }, 60000);
+    }
+
+    // ─── Details Panel: hover preview / click to pin ─────────────────────────
+    const PLACEHOLDER = '<b>Network Details</b><br>Hover a node or edge to preview it. Click to keep it open.';
+    const PIN_HINT = '<div class="pin-hint">Double-click anywhere to dismiss</div>';
+
+    function showPlaceholder() {
+        const box = document.getElementById('info-box');
+        box.classList.remove('pinned');
+        box.innerHTML = PLACEHOLDER;
+    }
+
+    /** Text for the hovered/clicked point, whether the trace stores it per-point or trace-wide. */
+    function pointDetails(points) {
+        const point = points && points[0];
+        if (!point) return '';
+        let content = point.hovertext || point.text || '';
+        if (!content && point.data) {
+            const idx = point.pointNumber || 0;
+            const src = point.data.hovertext || point.data.text;
+            content = Array.isArray(src) ? src[idx] : (src || '');
+        }
+        return content;
+    }
+
+    // Detach on a double-click anywhere -- except inside the panel itself, where
+    // double-click is how you select a word of the description you're reading.
+    document.addEventListener('dblclick', event => {
+        if (!pinned) return;
+        const box = document.getElementById('info-box');
+        if (box.contains(event.target)) return;
+        pinned = false;
+        showPlaceholder();
+    });
+
+    // ─── Details Panel Rendering ─────────────────────────────────────────────
+    // Hover text arrives as a string mixing markup we built (<b>, <br>) with
+    // raw description text from the vault. Only the description can contain
+    // links, so conversion happens here rather than at trace-build time --
+    // that keeps <a> tags out of Plotly's own hover label entirely.
+    // Three link shapes, tried in order. The first two cover malformed markdown
+    // the vault actually contains -- an empty link left beside a real one, and
+    // a link pasted inside another link -- which would otherwise leak their
+    // raw brackets into the panel.
+    const LINK_PATTERNS = new RegExp([
+        // [outer]([inner](url)) — link pasted inside a link; keep the outer
+        // label and the inner URL. The outer ')' is often missing, so it's optional.
+        /\[([^\]]*)\]\(\s*\[[^\]]*\]\((https?:\/\/[^\s)]+)\)[^)]*\)?/.source,
+        // [label](url) — trailing title text inside the parens is tolerated
+        /\[([^\]]*)\]\(\s*(https?:\/\/[^\s)]+)[^)]*\)/.source,
+        // bare URL
+        /(https?:\/\/[^\s<>()[\]]+)/.source
+    ].join('|'), 'g');
+
+    function escapeAttr(value) {
+        return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    }
+
+    function escapeText(value) {
+        return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderDetails(html) {
+        const text = html
+            // Obsidian [[wiki links]] point at vault notes, which have no web
+            // target -- show the name as plain text instead of a dead link.
+            .replace(/\[\[([^\]]+)\]\]/g, '$1')
+            // Empty markdown links are editing residue, not content.
+            .replace(/\[\s*\]\(\s*\)/g, '');
+
+        // One pass over every shape: a separate bare-URL pass would match again
+        // inside the href of an anchor an earlier pass had just produced.
+        // Only http/https match, so a javascript: URL can never become a link.
+        return text.replace(LINK_PATTERNS, (match, nestLabel, nestUrl, mdLabel, mdUrl, bareUrl) => {
+            let url, label, trailing = '';
+            if (nestUrl) {
+                url = nestUrl;
+                label = nestLabel || nestUrl;
+            } else if (mdUrl) {
+                url = mdUrl;
+                label = mdLabel || mdUrl;
+            } else {
+                // Don't swallow sentence punctuation into the href.
+                url = bareUrl.replace(/[.,;:!?]+$/, '');
+                trailing = bareUrl.slice(url.length);
+                label = url;
+            }
+            return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeText(label)}</a>${trailing}`;
+        });
+    }
+
     // ─── Utility ─────────────────────────────────────────────────────────────
     function interpolateColor(c1, c2, t) {
         const h2r = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255);
         const r2h = r => '#' + r.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
         const rgb1 = h2r(c1), rgb2 = h2r(c2);
         return r2h(rgb1.map((v, i) => (1 - t) * v + t * rgb2[i]));
+    }
+
+    // ─── Exported Viewer Bootstrap ───────────────────────────────────────────
+    // An exported file carries its data inline: skip the upload flow and render
+    // straight away. CSS keyed on body[data-viewer] hides Setup, layer
+    // reordering and the export control itself.
+    //
+    // Must stay last: rendering here runs far earlier in the script's lifetime
+    // than a click-triggered render would, so anything it touches has to be
+    // initialised already -- a `const` declared below this point would still be
+    // in its temporal dead zone.
+    if (window.__HORRENDOGRAM_DATA__) {
+        document.body.dataset.viewer = '';
+        document.querySelectorAll('.sidebar-page').forEach(p => p.classList.remove('active'));
+        document.getElementById('filters-page').classList.add('active');
+        document.getElementById('emptyState').style.display = 'none';
+        renderVisualization(window.__HORRENDOGRAM_DATA__);
     }
 });

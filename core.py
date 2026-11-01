@@ -10,9 +10,11 @@ def clean_string(value):
 
 
 def normalize_layer_name(value):
-    if value is None:
-        return None
-    return str(value).strip().lower()
+    # Go through clean_string() so a float NaN (pandas 3.x stores a missing
+    # value in a string column as NaN, not None) stays missing instead of
+    # becoming the literal layer "nan".
+    value = clean_string(value)
+    return value.lower() if value else None
 
 
 def parse_tags(value):
@@ -30,9 +32,15 @@ def parse_tags(value):
 
 
 def generate_layer_colors(layers):
+    # Light-mode categorical steps, in a fixed order chosen for colour-vision
+    # separation between adjacent layers (blue, orange, aqua, yellow, magenta,
+    # green, violet, red). The frontend swaps each for a dark-mode step when the
+    # dark theme is active -- see LAYER_DARK in static/script.js. Layers are also
+    # separated by height and named on the z-axis, so colour is never the only
+    # channel carrying identity.
     palette = [
-        "#4287f5", "#42f554", "#f54242", "#f5a142", "#9b42f5",
-        "#42f5f2", "#d9f542", "#6f42f5", "#f5429e", "#999999"
+        "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
+        "#008300", "#4a3aa7", "#e34948", "#7f7f7f", "#525252"
     ]
     return {layer: palette[i % len(palette)] for i, layer in enumerate(layers)}
 
@@ -77,7 +85,8 @@ def prepare_network(edges_df, layer_df=None, manual_order=None):
     edges_df['source_layer'] = edges_df['source_layer'].apply(normalize_layer_name)
     edges_df['source_type'] = edges_df['source_type'].apply(clean_string)
 
-    for col in ('target', 'target_layer', 'target_type', 'description', 'node_description'):
+    for col in ('target', 'target_layer', 'target_type', 'description', 'node_description',
+                'target_node_description'):
         if col not in edges_df.columns:
             # Assigning a bare `None` here creates the column as float64 NaN under
             # pandas 3.x, even though the rest of the frame is object dtype (see the
@@ -91,6 +100,7 @@ def prepare_network(edges_df, layer_df=None, manual_order=None):
     edges_df['target_type'] = edges_df['target_type'].apply(clean_string)
     edges_df['description'] = edges_df['description'].apply(clean_string)
     edges_df['node_description'] = edges_df['node_description'].apply(clean_string)
+    edges_df['target_node_description'] = edges_df['target_node_description'].apply(clean_string)
 
     edges_df = edges_df.dropna(subset=['source', 'source_layer'])
     has_targets = edges_df['target'].notna().any() and edges_df['target_layer'].notna().any()
@@ -193,10 +203,13 @@ def prepare_network(edges_df, layer_df=None, manual_order=None):
             t_unique = node_unique_names.get((row['target'], row['target_layer']), row['target'])
             t_type = clean_string(row.get('target_type'))
             t_tags = parse_tags(row.get('target_tags'))
+            t_desc = clean_string(row.get('target_node_description'))
             if t_unique not in node_types:
                 node_types[t_unique] = t_type.lower() if t_type and t_type.lower() in valid_types else 'unknown'
             if t_tags and t_unique not in node_tags:
                 node_tags[t_unique] = t_tags
+            if t_desc and t_unique not in node_descriptions:
+                node_descriptions[t_unique] = t_desc
 
     all_tags_set = set()
     for tags in node_tags.values():
