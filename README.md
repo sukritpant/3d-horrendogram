@@ -79,7 +79,7 @@ an example. You can also reorder layers in the app.
 
 Upload a ZIP of a vault containing three folders, recognised by these words in their
 names: `Actors`, `Instruments` and `Interlinkages`. A working example is in
-[`starter-vault/`](starter-vault).
+[`starter-vault.zip`](starter-vault.zip).
 
 The file name of an actor or instrument note is the node's name:
 
@@ -150,7 +150,7 @@ and diamonds are unknown types.
 ├── core.py              # Network logic
 ├── parser.py            # Obsidian vault parser
 ├── static/              # Frontend (HTML, CSS, JS)
-├── starter-vault/       # Example Obsidian vault with templates
+├── starter-vault.zip    # Example Obsidian vault with templates
 ├── 3d-horrendogram.py   # Command-line tool (see README-CLI.md)
 ├── config.yaml          # Command-line tool settings
 └── requirements.txt
@@ -175,13 +175,6 @@ Both return `{ network_data, positions, config }`.
 
 ---
 
-## License
-
-This work is licensed under a
-[Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/).
-
----
-
 ## Citing
 
 This tool was created as part of the collaborative multidisciplinary project SOS3D
@@ -197,3 +190,10 @@ Teixeira, J. (2025). 3D Multilayer Governance Visualization. Zenodo.
 
 - [Project website](https://research.abo.fi/en/projects/3d-visualization-of-governance-and-regulatory-layers/)
 - [Project model on Zenodo](https://doi.org/10.5281/zenodo.17541211)
+
+---
+
+## License
+
+This work is licensed under a
+[Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/).

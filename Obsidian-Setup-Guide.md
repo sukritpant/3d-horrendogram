@@ -1,8 +1,7 @@
 # Setting Up an Obsidian Vault for the 3D Horrendogram
 
 How to build your own governance network in Obsidian and turn it into a 3D
-horrendogram. No programming needed. (For using the visualizer once it's
-loaded, see [Non-Tech.md](Non-Tech.md); for developers, see [README2.md](README2.md).)
+horrendogram. No programming needed.
 
 ---
 
@@ -23,7 +22,7 @@ Each actor and instrument says which **level** it belongs to (e.g. `eu`,
 
 ## Quick start
 
-1. **Get the starter vault.** Download `starter-vault.zip` from this project and
+1. **Get the starter vault.** Download [`starter-vault.zip`](starter-vault.zip) and
    unzip it. It already has the right folders, three templates, and a few
    example notes.
 2. **Open it in Obsidian.** *Open folder as vault* → choose the `starter-vault`
